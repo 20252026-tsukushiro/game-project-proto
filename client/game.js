@@ -300,24 +300,33 @@ function startGame(playerName, roomCode) {
                 }
             };
 
+            // 自機のHP変化検知用変数
+            let lastMyHp = 3;
+
             room.state.players.onAdd = (playerState, sessionId) => {
                 if (sessionId === room.sessionId) {
                     player.setPosition(playerState.x, playerState.y);
                     player.setRotation(playerState.rotation);
+                    lastMyHp = playerState.hp;
 
                     playerState.onChange = () => {
                         player.visible = playerState.hp > 0;
                         updateInvincibleEffect(player, playerState.invincible, scene);
 
-                        // 撃破（HP0以下）時、チャージ解除および弾薬リセット
+                        // 被弾してHPが減ったのみチャージを中断
+                        if (playerState.hp < lastMyHp) {
+                            cancelCharge();
+                        }
+                        lastMyHp = playerState.hp;
+
+                        // 撃破（HP0以下）時、チャージ解除及び弾薬リセット
                         if (playerState.hp <= 0) {
                             cancelCharge();
                             resetAmmo();
-                        } else if (playerState.chargeLevel === 0 && isCharging) {
-                            cancelCharge();
                         }
                     };
                 } else {
+                    // 他プレイヤーの処理
                     const otherPlayer = scene.physics.add.sprite(playerState.x, playerState.y, 'otherPlayerTexture');
                     otherPlayers[sessionId] = otherPlayer;
 
@@ -358,7 +367,8 @@ function startGame(playerName, roomCode) {
 
             room.onMessage("destroy_bullet", (data) => {
                 bullets.children.each((bullet) => {
-                    if (bullet.active && bullet.bulletId === data.bulletId) {
+                    // チャージ弾（貫通）は一括消去メッセージで消さない
+                    if (bullet.active && bullet.bulletId === data.bulletId && !bullet.isCharged) {
                         bullet.disableBody(true, true);
                     }
                 });
@@ -373,6 +383,11 @@ function startGame(playerName, roomCode) {
 
                 resetAmmo();
                 cancelCharge();
+
+                // カウントダウン開始時に残弾を消去
+                bullets.children.each((b) => {
+                    if (b.active) b.disableBody(true, true);
+                });
 
                 centerText.setText(data.text).setVisible(true);
                 if (data.text !== "") {
@@ -544,6 +559,23 @@ function cancelCharge() {
     }
 }
 
+// 全プレイヤーのチャージ描画をクリアする関数
+function clearAllChargeEffects() {
+    // 自機のチャージグラフィックをクリア
+    if (typeof localChargeGraphic !== 'undefined' && localChargeGraphic) {
+        localChargeGraphic.clear();
+    }
+
+    // 他プレイヤーのチャージグラフィックをすべてクリア
+    if (typeof chargeEffects !== 'undefined' && chargeEffects) {
+        for (let id in chargeEffects) {
+            if (chargeEffects[id]) {
+                chargeEffects[id].clear();
+            }
+        }
+    }
+}
+
 function drawChargeRing(graphics, x, y, level, isVisible) {
     graphics.clear();
     if (!isVisible || level === 0) return;
@@ -637,10 +669,12 @@ function shootBullet(x, y, angle, isLocal, isCharged = false, bulletId = null) {
 
         if (isCharged) {
             bullet.body.setSize(16, 16);
+            bullet.body.setOffset(0, 0);
             bullet.body.setBounce(0, 0);
             this.physics.velocityFromRotation(angle, 1200, bullet.body.velocity);
         } else {
             bullet.body.setSize(8, 8);
+            bullet.body.setOffset(0, 0);
             bullet.body.setBounce(1, 1);
             this.physics.velocityFromRotation(angle, 750, bullet.body.velocity);
         }
