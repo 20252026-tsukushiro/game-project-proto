@@ -726,7 +726,7 @@ function handleBulletBounce(bullet) {
 function startReload() {
     if (isReloading || ammo === maxAmmo || isSpectator) return;
     isReloading = true;
-    reloadTimer = 3.0;
+    reloadTimer = 2.0;
 }
 
 function resetAmmo() {
