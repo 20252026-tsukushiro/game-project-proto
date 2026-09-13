@@ -79,6 +79,9 @@
         <h2>対戦ルーム接続</h2>
         <input type="text" id="playerName" placeholder="プレイヤー名" maxlength="10">
         <input type="text" id="roomCode" placeholder="ルームID" maxlength="4" pattern="[0-9]{4}">
+
+        <div id="loginErrorMessage" style="color: #ff4d4d; font-size: 14px; margin-top: 8px; min-height: 20px;"></div>
+
         <div class="mode-buttons">
             <button id="pvpBtn" class="btn-mode">PvP</button>
             <div class="pve-wrapper" data-tooltip="PvEモード近日追加予定">
@@ -110,7 +113,7 @@
             チャージ中は移動が遅くなる上、被弾するとチャージが中断されてしまうので注意
         </div>
     </div>
-
+    <script src="PveLobbyScene.js"></script>    
     <script src="game.js"></script>
 
     <script>

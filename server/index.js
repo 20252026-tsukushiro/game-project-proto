@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const { Server } = require('colyseus');
 const { GameRoom } = require('./GameRoom');
+const PveGameRoom = require('./PveGameRoom');
 
 const app = express();
 app.use(cors());
@@ -17,6 +18,9 @@ const gameServer = new Server({ server });
 
 // 'game_room' という名前で GameRoom を登録し、roomCode と mode でフィルタリング可能にする
 gameServer.define('game_room', GameRoom).filterBy(['roomCode', 'mode']);
+
+// 'pve_room' という名前で PveGameRoom を登録し、roomCode と mode でフィルタリング可能にする
+gameServer.define('pve_room', PveGameRoom).filterBy(['roomCode', 'mode']);
 
 const PORT = process.env.PORT || 2567;
 

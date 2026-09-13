@@ -47,14 +47,68 @@ let nameTag;
 let sceneRef;
 let localChargeGraphic;
 
-// PvPボタンクリックで開始
+// 入力チェック用関数
+function validateLoginInputs() {
+    const name = document.getElementById('playerName').value.trim();
+    const roomCode = document.getElementById('roomCode').value.trim();
+    const errorMsg = document.getElementById('loginErrorMessage');
+
+    if (!name || !roomCode) {
+        if (errorMsg) errorMsg.textContent = "空欄の項目があります";
+        return null;
+    }
+
+    if (errorMsg) errorMsg.textContent = "";
+    return { name, roomCode };
+}
+
+// PvPボタンクリックイベント
 document.getElementById('pvpBtn').addEventListener('click', () => {
-    const name = document.getElementById('playerName').value || "Player";
-    const roomCode = document.getElementById('roomCode').value || "0000";
+    const inputs = validateLoginInputs();
+    if (!inputs) return; // 空欄がある場合はここで処理を中断
 
     document.getElementById('login-form').style.display = 'none';
-    startGame(name, roomCode, "PvP");
+    startGame(inputs.name, inputs.roomCode, "PvP");
 });
+
+// PvEボタンクリックイベント
+document.getElementById('pveBtn').addEventListener('click', () => {
+    const inputs = validateLoginInputs();
+    if (!inputs) return; // 空欄がある場合はここで処理を中断
+
+    document.getElementById('login-form').style.display = 'none';
+    startPveGame(inputs.name, inputs.roomCode);
+});
+
+// PvE開始・ロビー接続処理
+async function startPveGame(playerName, roomCode) {
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = isLocal ? 'ws://localhost:2567' : `${protocol}//${window.location.host}`;
+
+    client = new Colyseus.Client(host);
+    try {
+        // 'pve_room' に接続
+        room = await client.joinOrCreate('pve_room', { playerName: playerName, roomCode: roomCode, mode: "PvE" });
+
+        // Phaserインスタンス作成（PveLobbySceneを読み込み）
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            backgroundColor: '#000000',
+            physics: {
+                default: 'arcade',
+                arcade: { debug: false }
+            },
+            scene: [PveLobbyScene]
+        };
+
+        new Phaser.Game(config);
+    } catch (e) {
+        console.error('PvE接続エラー:', e);
+    }
+}
 
 function startGame(playerName, roomCode, mode) {
     const config = {
