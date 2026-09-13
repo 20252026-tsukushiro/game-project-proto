@@ -13,7 +13,8 @@ class Player extends Schema {
         this.playerIndex = 0;
         this.invincible = false;
         this.readyForRematch = false;
-        this.chargeLevel = 0; // 0: なし, 1: チャージ中(1px), 2: チャージ完了(3px)
+        this.chargeLevel = 0;
+        this.isSpectator = false; // ★観戦者フラグ
     }
 }
 defineTypes(Player, {
@@ -26,7 +27,8 @@ defineTypes(Player, {
     playerIndex: "number",
     invincible: "boolean",
     readyForRematch: "boolean",
-    chargeLevel: "number"
+    chargeLevel: "number",
+    isSpectator: "boolean" // ★定義追加
 });
 
 class GameState extends Schema {
@@ -55,7 +57,7 @@ class GameRoom extends Room {
 
         this.onMessage("move", (client, data) => {
             const player = this.state.players.get(client.sessionId);
-            if (player && player.hp > 0 && !this.state.gameOver) {
+            if (player && !player.isSpectator && player.hp > 0 && !this.state.gameOver) {
                 player.x = data.x;
                 player.y = data.y;
                 player.rotation = data.rotation;
@@ -64,7 +66,7 @@ class GameRoom extends Room {
 
         this.onMessage("set_charge", (client, data) => {
             const player = this.state.players.get(client.sessionId);
-            if (player && player.hp > 0 && !this.state.gameOver) {
+            if (player && !player.isSpectator && player.hp > 0 && !this.state.gameOver) {
                 player.chargeLevel = data.level || 0;
             }
         });
@@ -73,7 +75,7 @@ class GameRoom extends Room {
             if (!this.state.gameStarted || this.state.gameOver) return;
 
             const player = this.state.players.get(client.sessionId);
-            if (player && player.hp > 0) {
+            if (player && !player.isSpectator && player.hp > 0) {
                 this.broadcast("shoot", {
                     x: data.x,
                     y: data.y,
@@ -97,9 +99,9 @@ class GameRoom extends Room {
             const target = this.state.players.get(data.targetId);
             const attacker = this.state.players.get(client.sessionId);
 
-            if (target && target.hp > 0 && !target.invincible) {
+            if (target && !target.isSpectator && target.hp > 0 && !target.invincible) {
                 target.hp -= damage;
-                target.chargeLevel = 0; // 被弾時はチャージリセット
+                target.chargeLevel = 0;
 
                 if (target.hp <= 0) {
                     target.hp = 0;
@@ -128,17 +130,19 @@ class GameRoom extends Room {
 
         this.onMessage("rematch", (client) => {
             const player = this.state.players.get(client.sessionId);
-            if (player && this.state.gameOver && !this.isCountingDown) {
+            if (player && !player.isSpectator && this.state.gameOver && !this.isCountingDown) {
                 player.readyForRematch = true;
 
                 let allReady = true;
-                let count = 0;
+                let activeCount = 0;
                 this.state.players.forEach((p) => {
-                    count++;
-                    if (!p.readyForRematch) allReady = false;
+                    if (!p.isSpectator) {
+                        activeCount++;
+                        if (!p.readyForRematch) allReady = false;
+                    }
                 });
 
-                if (count >= 2 && allReady) {
+                if (activeCount >= 2 && allReady) {
                     this.resetAndStart();
                 } else {
                     client.send("waiting_for_opponent");
@@ -147,23 +151,45 @@ class GameRoom extends Room {
             }
         });
 
-        this.onMessage("exit", () => {
-            this.broadcast("force_reload");
+        this.onMessage("exit", (client) => {
+            const player = this.state.players.get(client.sessionId);
+            // 対戦プレイヤーが押した場合のみ全員をトップに戻す
+            if (player && !player.isSpectator) {
+                this.broadcast("force_reload");
+            }
         });
     }
 
     onJoin(client, options) {
         const player = new Player();
         player.name = options.name || "Player";
-        player.playerIndex = this.state.players.size;
 
-        player.x = player.playerIndex === 0 ? 100 : 700;
-        player.y = 340;
-        player.rotation = player.playerIndex === 0 ? 0 : Math.PI;
+        // アクティブプレイヤー（対戦者）の数をカウント
+        let activePlayers = [];
+        this.state.players.forEach((p) => {
+            if (!p.isSpectator) activePlayers.push(p);
+        });
+
+        if (activePlayers.length >= 2) {
+            // 3人目以降は観戦モードにする
+            player.isSpectator = true;
+            player.playerIndex = -1;
+            player.hp = 0;
+        } else {
+            // 対戦プレイヤーとして登録
+            player.isSpectator = false;
+            player.playerIndex = activePlayers.length;
+            player.x = player.playerIndex === 0 ? 100 : 700;
+            player.y = 340;
+            player.rotation = player.playerIndex === 0 ? 0 : Math.PI;
+        }
 
         this.state.players.set(client.sessionId, player);
 
-        if (this.state.players.size === 2 && !this.isCountingDown && !this.state.gameStarted && !this.state.gameOver) {
+        let currentActiveCount = 0;
+        this.state.players.forEach((p) => { if (!p.isSpectator) currentActiveCount++; });
+
+        if (currentActiveCount === 2 && !this.isCountingDown && !this.state.gameStarted && !this.state.gameOver) {
             this.startCountdown();
         }
     }
@@ -175,14 +201,16 @@ class GameRoom extends Room {
         }
 
         this.state.players.forEach((p) => {
-            p.hp = 3;
-            p.score = 0;
-            p.x = p.playerIndex === 0 ? 100 : 700;
-            p.y = 340;
-            p.rotation = p.playerIndex === 0 ? 0 : Math.PI;
-            p.invincible = false;
-            p.readyForRematch = false;
-            p.chargeLevel = 0;
+            if (!p.isSpectator) {
+                p.hp = 3;
+                p.score = 0;
+                p.x = p.playerIndex === 0 ? 100 : 700;
+                p.y = 340;
+                p.rotation = p.playerIndex === 0 ? 0 : Math.PI;
+                p.invincible = false;
+                p.readyForRematch = false;
+                p.chargeLevel = 0;
+            }
         });
 
         this.state.gameOver = false;
@@ -239,36 +267,48 @@ class GameRoom extends Room {
         this.state.gameStarted = false;
         this.state.gameOver = true;
 
-        let playerList = [];
-        this.state.players.forEach((p) => playerList.push(p));
+        let activePlayerList = [];
+        this.state.players.forEach((p) => {
+            if (!p.isSpectator) activePlayerList.push(p);
+        });
 
-        if (playerList.length >= 2) {
-            const p1 = playerList.find(p => p.playerIndex === 0) || playerList[0];
-            const p2 = playerList.find(p => p.playerIndex === 1) || playerList[1];
+        if (activePlayerList.length >= 2) {
+            const p1 = activePlayerList.find(p => p.playerIndex === 0) || activePlayerList[0];
+            const p2 = activePlayerList.find(p => p.playerIndex === 1) || activePlayerList[1];
 
             if (p1.score > p2.score) {
                 this.state.winnerText = `WINNER : ${p1.name}`;
             } else if (p2.score > p1.score) {
                 this.state.winnerText = `WINNER : ${p2.name}`;
             } else {
-                if (p1.hp > p2.hp) {
+                // 復活待ち（HP0）のプレイヤーは復活後のHP（3）として計算
+                const p1EffectiveHp = p1.hp === 0 ? 3 : p1.hp;
+                const p2EffectiveHp = p2.hp === 0 ? 3 : p2.hp;
+
+                if (p1EffectiveHp > p2EffectiveHp) {
                     this.state.winnerText = `WINNER : ${p1.name}`;
-                } else if (p2.hp > p1.hp) {
+                } else if (p2EffectiveHp > p1EffectiveHp) {
                     this.state.winnerText = `WINNER : ${p2.name}`;
                 } else {
                     this.state.winnerText = "DRAW : 引き分け";
                 }
             }
-        } else if (playerList.length === 1) {
-            this.state.winnerText = `WINNER : ${playerList[0].name}`;
+        } else if (activePlayerList.length === 1) {
+            this.state.winnerText = `WINNER : ${activePlayerList[0].name}`;
         } else {
             this.state.winnerText = "DRAW : 引き分け";
         }
     }
 
     onLeave(client) {
+        const leavingPlayer = this.state.players.get(client.sessionId);
+        const isSpectator = leavingPlayer ? leavingPlayer.isSpectator : true;
         this.state.players.delete(client.sessionId);
-        this.broadcast("force_reload");
+        
+        // 対戦プレイヤーが抜けたらゲームを終了/リセット、観戦者なら無視
+        if (!isSpectator) {
+            this.broadcast("force_reload");
+        }
     }
 }
 

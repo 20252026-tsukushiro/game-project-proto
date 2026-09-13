@@ -1,3 +1,5 @@
+// client/game.js
+
 let player;
 let bullets;
 let obstacles;
@@ -11,6 +13,9 @@ let room;
 let otherPlayers = {};
 let otherPlayerNames = {};
 let chargeEffects = {}; // プレイヤーごとのチャージエフェクト(Graphics)
+
+// 観戦フラグ
+let isSpectator = false;
 
 // 弾薬・リロード管理変数（自機用）
 let ammo = 3;
@@ -42,15 +47,16 @@ let nameTag;
 let sceneRef;
 let localChargeGraphic;
 
-document.getElementById('startBtn').addEventListener('click', () => {
+// PvPボタンクリックで開始
+document.getElementById('pvpBtn').addEventListener('click', () => {
     const name = document.getElementById('playerName').value || "Player";
     const roomCode = document.getElementById('roomCode').value || "0000";
 
     document.getElementById('login-form').style.display = 'none';
-    startGame(name, roomCode);
+    startGame(name, roomCode, "PvP");
 });
 
-function startGame(playerName, roomCode) {
+function startGame(playerName, roomCode, mode) {
     const config = {
         type: Phaser.AUTO,
         width: 800,
@@ -92,8 +98,11 @@ function startGame(playerName, roomCode) {
         createWall(250, 490, 16, 60);
         createWall(228, 468, 60, 16);
 
-        createTexture(this, 'playerTexture', 0x0088ff);
-        createTexture(this, 'otherPlayerTexture', 0xff4444);
+        // ★ インデックスに応じたプレイヤーカラー（P1: 青, P2: 赤, P3: 黄, P4: 緑）の生成
+        const playerColors = [0x0088ff, 0xff4444, 0xffff00, 0x00ff00];
+        playerColors.forEach((color, index) => {
+            createTexture(this, `playerTexture_${index}`, color);
+        });
 
         // 通常弾テクスチャ (8x8)
         const bulletGraphics = this.make.graphics({ x: 0, y: 0, add: false });
@@ -109,14 +118,15 @@ function startGame(playerName, roomCode) {
         chargedBulletGraphics.strokeCircle(8, 8, 7);
         chargedBulletGraphics.generateTexture('chargedBulletTexture', 16, 16);
 
-        player = this.physics.add.sprite(400, 340, 'playerTexture');
+        // 自機スプライト（初期生成）
+        player = this.physics.add.sprite(400, 340, 'playerTexture_0');
         player.setCollideWorldBounds(true);
 
         this.physics.add.collider(player, obstacles);
 
         bullets = this.physics.add.group({ defaultKey: 'bulletTexture', maxSize: 50 });
 
-        // 障害物との衝突判定：チャージ弾（isCharged）は貫通させる
+        // 障害物との衝突判定
         this.physics.add.collider(
             bullets,
             obstacles,
@@ -197,7 +207,7 @@ function startGame(playerName, roomCode) {
         rematchBtn.on('pointerover', () => rematchBtn.setStyle({ fill: '#ffff00' }));
         rematchBtn.on('pointerout', () => rematchBtn.setStyle({ fill: '#ffffff' }));
         rematchBtn.on('pointerdown', () => {
-            if (room) room.send("rematch");
+            if (room && !isSpectator) room.send("rematch");
         });
 
         exitBtn = this.add.text(490, 430, ' ゲーム終了 ', {
@@ -209,16 +219,19 @@ function startGame(playerName, roomCode) {
 
         exitBtn.on('pointerover', () => exitBtn.setStyle({ fill: '#ffff00' }));
         exitBtn.on('pointerout', () => exitBtn.setStyle({ fill: '#ffffff' }));
+        
+        // ★ 観戦者の場合は部屋全体へ通信せず画面のみリロード
         exitBtn.on('pointerdown', () => {
-            if (room) {
+            if (room && !isSpectator) {
                 room.send("exit");
             } else {
                 window.location.reload();
             }
         });
 
-        // クリック射撃（通常弾）
+        // クリック射撃（観戦者以外のみ）
         this.input.on('pointerdown', () => {
+            if (isSpectator) return;
             const isStarted = room && room.state && room.state.gameStarted && !room.state.gameOver;
             if (isStarted && !isReloading && ammo > 0 && player && player.visible && !isCharging) {
                 shootBullet.call(scene, player.x, player.y, player.rotation, true, false);
@@ -230,30 +243,35 @@ function startGame(playerName, roomCode) {
             }
         });
 
-        // 接続先URLの動的判定
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = isLocal ? 'ws://localhost:2567' : `${protocol}//${window.location.host}`;
 
         client = new Colyseus.Client(host);
         try {
-            room = await client.joinOrCreate('game_room', { name: playerName, roomCode: roomCode });
+            room = await client.joinOrCreate('game_room', { name: playerName, roomCode: roomCode, mode: mode });
 
             room.onMessage("force_reload", () => {
                 window.location.reload();
             });
 
+            // ★ 観戦者画面では「対戦相手を待っています...」を表示しない
             room.onMessage("waiting_for_opponent", () => {
                 winnerResultText.setVisible(false);
                 finishText.setVisible(false);
                 rematchBtn.setVisible(false);
                 exitBtn.setVisible(false);
                 opponentRematchText.setVisible(false);
-                centerText.setText("対戦相手を待っています...").setVisible(true);
+
+                if (!isSpectator) {
+                    centerText.setText("対戦相手を待っています...").setVisible(true);
+                } else {
+                    centerText.setVisible(false);
+                }
             });
 
             room.onMessage("opponent_wants_rematch", () => {
-                opponentRematchText.setVisible(true);
+                if (!isSpectator) opponentRematchText.setVisible(true);
             });
 
             room.state.onChange = () => {
@@ -263,8 +281,10 @@ function startGame(playerName, roomCode) {
                 let p2 = null;
 
                 room.state.players.forEach((p) => {
-                    if (p.playerIndex === 0) p1 = p;
-                    if (p.playerIndex === 1) p2 = p;
+                    if (!p.isSpectator) {
+                        if (p.playerIndex === 0) p1 = p;
+                        if (p.playerIndex === 1) p2 = p;
+                    }
                 });
 
                 if (p1) {
@@ -289,63 +309,78 @@ function startGame(playerName, roomCode) {
                         if (b.active) b.disableBody(true, true);
                     });
 
+                    centerText.setVisible(false);
+                    winnerResultText.setText(room.state.winnerText).setVisible(true);
+                    finishText.setVisible(true);
+                    
                     const myState = room.state.players.get(room.sessionId);
-                    if (myState && !myState.readyForRematch) {
-                        centerText.setVisible(false);
-                        winnerResultText.setText(room.state.winnerText).setVisible(true);
-                        finishText.setVisible(true);
+                    if (!isSpectator && myState && !myState.readyForRematch) {
                         rematchBtn.setVisible(true);
-                        exitBtn.setVisible(true);
                     }
+                    exitBtn.setVisible(true);
                 }
             };
 
-            // 自機のHP変化検知用変数
             let lastMyHp = 3;
 
             room.state.players.onAdd = (playerState, sessionId) => {
                 if (sessionId === room.sessionId) {
-                    player.setPosition(playerState.x, playerState.y);
-                    player.setRotation(playerState.rotation);
-                    lastMyHp = playerState.hp;
+                    isSpectator = playerState.isSpectator;
 
-                    playerState.onChange = () => {
-                        player.visible = playerState.hp > 0;
-                        updateInvincibleEffect(player, playerState.invincible, scene);
-
-                        // 被弾してHPが減ったのみチャージを中断
-                        if (playerState.hp < lastMyHp) {
-                            cancelCharge();
-                        }
+                    if (isSpectator) {
+                        player.setVisible(false);
+                        player.body.enable = false;
+                        nameTag.setVisible(false);
+                        ammoText.setText("【観戦モード】");
+                        // ★ 観戦者の場合は「対戦相手を待っています...」を即時非表示化
+                        centerText.setVisible(false);
+                    } else {
+                        // ★ playerIndex に基づくテクスチャ設定 (0:青, 1:赤, 2:黄, 3:緑)
+                        const colorIdx = playerState.playerIndex >= 0 ? playerState.playerIndex : 0;
+                        player.setTexture(`playerTexture_${colorIdx}`);
+                        player.setPosition(playerState.x, playerState.y);
+                        player.setRotation(playerState.rotation);
                         lastMyHp = playerState.hp;
 
-                        // 撃破（HP0以下）時、チャージ解除及び弾薬リセット
-                        if (playerState.hp <= 0) {
-                            cancelCharge();
-                            resetAmmo();
-                        }
-                    };
+                        playerState.onChange = () => {
+                            player.visible = playerState.hp > 0;
+                            updateInvincibleEffect(player, playerState.invincible, scene);
+
+                            if (playerState.hp < lastMyHp) {
+                                cancelCharge();
+                            }
+                            lastMyHp = playerState.hp;
+
+                            if (playerState.hp <= 0) {
+                                cancelCharge();
+                                resetAmmo();
+                            }
+                        };
+                    }
                 } else {
-                    // 他プレイヤーの処理
-                    const otherPlayer = scene.physics.add.sprite(playerState.x, playerState.y, 'otherPlayerTexture');
-                    otherPlayers[sessionId] = otherPlayer;
+                    if (!playerState.isSpectator) {
+                        // ★ 他プレイヤーも playerIndex に基づくカラーテクスチャを適用
+                        const colorIdx = playerState.playerIndex >= 0 ? playerState.playerIndex : 0;
+                        const otherPlayer = scene.physics.add.sprite(playerState.x, playerState.y, `playerTexture_${colorIdx}`);
+                        otherPlayers[sessionId] = otherPlayer;
 
-                    const otherName = scene.add.text(playerState.x, playerState.y - 25, playerState.name, { fontSize: '14px', fill: '#ffaaaa' }).setOrigin(0.5);
-                    otherPlayerNames[sessionId] = otherName;
+                        const otherName = scene.add.text(playerState.x, playerState.y - 25, playerState.name, { fontSize: '14px', fill: '#ffaaaa' }).setOrigin(0.5);
+                        otherPlayerNames[sessionId] = otherName;
 
-                    const otherChargeG = scene.add.graphics();
-                    chargeEffects[sessionId] = otherChargeG;
+                        const otherChargeG = scene.add.graphics();
+                        chargeEffects[sessionId] = otherChargeG;
 
-                    playerState.onChange = () => {
-                        otherPlayer.setPosition(playerState.x, playerState.y);
-                        otherPlayer.setRotation(playerState.rotation);
-                        otherPlayer.visible = playerState.hp > 0;
+                        playerState.onChange = () => {
+                            otherPlayer.setPosition(playerState.x, playerState.y);
+                            otherPlayer.setRotation(playerState.rotation);
+                            otherPlayer.visible = playerState.hp > 0;
 
-                        otherName.setPosition(playerState.x, playerState.y - 25);
-                        otherName.visible = playerState.hp > 0;
+                            otherName.setPosition(playerState.x, playerState.y - 25);
+                            otherName.visible = playerState.hp > 0;
 
-                        updateInvincibleEffect(otherPlayer, playerState.invincible, scene);
-                    };
+                            updateInvincibleEffect(otherPlayer, playerState.invincible, scene);
+                        };
+                    }
                 }
             };
 
@@ -367,7 +402,6 @@ function startGame(playerName, roomCode) {
 
             room.onMessage("destroy_bullet", (data) => {
                 bullets.children.each((bullet) => {
-                    // チャージ弾（貫通）は一括消去メッセージで消さない
                     if (bullet.active && bullet.bulletId === data.bulletId && !bullet.isCharged) {
                         bullet.disableBody(true, true);
                     }
@@ -381,17 +415,16 @@ function startGame(playerName, roomCode) {
                 exitBtn.setVisible(false);
                 opponentRematchText.setVisible(false);
 
-                // 空文字（画面テキスト消去通知）の時は AMMO リセットやチャージキャンセルを行わない
                 if (data.text !== "") {
-                    resetAmmo();
-                    cancelCharge();
+                    if (!isSpectator) {
+                        resetAmmo();
+                        cancelCharge();
+                    }
 
-                    // カウントダウン開始時に残弾を消去
                     bullets.children.each((b) => {
-                    if (b.active) b.disableBody(true, true);
+                        if (b.active) b.disableBody(true, true);
                     });
                 }
-                
 
                 centerText.setText(data.text).setVisible(true);
                 if (data.text !== "") {
@@ -412,6 +445,22 @@ function startGame(playerName, roomCode) {
     }
 
     function update(time, delta) {
+        if (isSpectator) {
+            ammoText.setText("【観戦モード】");
+            if (room && room.state) {
+                for (let sessionId in otherPlayers) {
+                    const otherPlayer = otherPlayers[sessionId];
+                    const otherChargeG = chargeEffects[sessionId];
+                    const playerState = room.state.players.get(sessionId);
+
+                    if (otherPlayer && otherChargeG && playerState && !playerState.isSpectator) {
+                        drawChargeRing(otherChargeG, otherPlayer.x, otherPlayer.y, playerState.chargeLevel, otherPlayer.visible);
+                    }
+                }
+            }
+            return;
+        }
+
         if (!player || !player.visible) {
             cancelCharge();
             return;
@@ -419,7 +468,6 @@ function startGame(playerName, roomCode) {
 
         const isStarted = room && room.state && room.state.gameStarted && !room.state.gameOver;
 
-        // リロード処理
         if (Phaser.Input.Keyboard.JustDown(keyR) && isStarted) {
             cancelCharge();
             startReload();
@@ -440,7 +488,6 @@ function startGame(playerName, roomCode) {
             ammoText.setText(`AMMO : ${ammo}/${maxAmmo}`);
         }
 
-        // --- チャージ処理（SPACEキー） ---
         if (isStarted && !isReloading && ammo > 0) {
             if (Phaser.Input.Keyboard.JustDown(keySpace)) {
                 isCharging = true;
@@ -472,7 +519,6 @@ function startGame(playerName, roomCode) {
             cancelCharge();
         }
 
-        // 移動制御（チャージ中は100に減速）
         const speed = isCharging ? 100 : 200;
         player.body.setVelocity(0);
 
@@ -490,17 +536,15 @@ function startGame(playerName, roomCode) {
         nameTag.setPosition(player.x, player.y - 25);
         nameTag.visible = player.visible;
 
-        // 自機のチャージリング描画
         drawChargeRing(localChargeGraphic, player.x, player.y, currentChargeLevel, player.visible);
 
-        // 他プレイヤーのチャージリングのリアルタイム追従描画
         if (room && room.state) {
             for (let sessionId in otherPlayers) {
                 const otherPlayer = otherPlayers[sessionId];
                 const otherChargeG = chargeEffects[sessionId];
                 const playerState = room.state.players.get(sessionId);
 
-                if (otherPlayer && otherChargeG && playerState) {
+                if (otherPlayer && otherChargeG && playerState && !playerState.isSpectator) {
                     drawChargeRing(otherChargeG, otherPlayer.x, otherPlayer.y, playerState.chargeLevel, otherPlayer.visible);
                 }
             }
@@ -510,7 +554,6 @@ function startGame(playerName, roomCode) {
             room.send("move", { x: player.x, y: player.y, rotation: player.rotation });
         }
 
-        // 弾の当たり判定処理
         bullets.children.each((bullet) => {
             if (!bullet.active) return;
 
@@ -519,7 +562,7 @@ function startGame(playerName, roomCode) {
                     const target = otherPlayers[sessionId];
                     const targetState = room ? room.state.players.get(sessionId) : null;
 
-                    if (target && target.visible && targetState && !targetState.invincible) {
+                    if (target && target.visible && targetState && !targetState.isSpectator && !targetState.invincible) {
                         const dist = Phaser.Math.Distance.Between(bullet.x, bullet.y, target.x, target.y);
                         const hitDistance = bullet.isCharged ? 24 : 20;
 
@@ -550,7 +593,7 @@ function startGame(playerName, roomCode) {
 
 function updateChargeLevel(level) {
     currentChargeLevel = level;
-    if (room) {
+    if (room && !isSpectator) {
         room.send("set_charge", { level: level });
     }
 }
@@ -560,23 +603,6 @@ function cancelCharge() {
     chargeStartTime = 0;
     if (currentChargeLevel !== 0) {
         updateChargeLevel(0);
-    }
-}
-
-// 全プレイヤーのチャージ描画をクリアする関数
-function clearAllChargeEffects() {
-    // 自機のチャージグラフィックをクリア
-    if (typeof localChargeGraphic !== 'undefined' && localChargeGraphic) {
-        localChargeGraphic.clear();
-    }
-
-    // 他プレイヤーのチャージグラフィックをすべてクリア
-    if (typeof chargeEffects !== 'undefined' && chargeEffects) {
-        for (let id in chargeEffects) {
-            if (chargeEffects[id]) {
-                chargeEffects[id].clear();
-            }
-        }
     }
 }
 
@@ -609,7 +635,7 @@ function handleBulletBounce(bullet) {
 }
 
 function startReload() {
-    if (isReloading || ammo === maxAmmo) return;
+    if (isReloading || ammo === maxAmmo || isSpectator) return;
     isReloading = true;
     reloadTimer = 3.0;
 }
@@ -683,7 +709,7 @@ function shootBullet(x, y, angle, isLocal, isCharged = false, bulletId = null) {
             this.physics.velocityFromRotation(angle, 750, bullet.body.velocity);
         }
 
-        if (isLocal && room) {
+        if (isLocal && room && !isSpectator) {
             room.send("shoot", { x: x, y: y, angle: angle, bulletId: id, isCharged: isCharged });
         }
     }

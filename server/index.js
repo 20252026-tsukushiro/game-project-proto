@@ -15,8 +15,8 @@ app.use(express.static(path.join(__dirname, '../client')));
 const server = http.createServer(app);
 const gameServer = new Server({ server });
 
-// 'game_room' という名前でルームを登録
-gameServer.define('game_room', GameRoom).filterBy(['roomCode']);
+// 'game_room' という名前で GameRoom を登録し、roomCode と mode でフィルタリング可能にする
+gameServer.define('game_room', GameRoom).filterBy(['roomCode', 'mode']);
 
 const PORT = process.env.PORT || 2567;
 

@@ -15,11 +15,38 @@
             display: block; margin: 10px auto; padding: 10px; width: 200px;
             border-radius: 4px; border: 1px solid #555; text-align: center; font-size: 16px;
         }
-        #login-form button {
-            padding: 10px 20px; font-size: 16px; background: #0088ff; color: white;
-            border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;
+
+        /* --- モード選択ボタンのスタイル --- */
+        .mode-buttons {
+            display: flex; justify-content: center; gap: 15px; margin-top: 15px;
         }
-        #login-form button:hover { background: #0066cc; }
+        .btn-mode {
+            padding: 10px 24px; font-size: 16px; background: #0088ff; color: white;
+            border: none; border-radius: 4px; cursor: pointer; font-weight: bold;
+        }
+        .btn-mode:hover:not(:disabled) { background: #0066cc; }
+        .btn-mode:disabled { background: #555; opacity: 0.6; cursor: not-allowed; }
+
+        /* --- PvEホバー時のツールチップ表示 --- */
+        .pve-wrapper {
+            position: relative; display: inline-block;
+        }
+        .pve-wrapper[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #ffcc00;
+            padding: 6px 10px;
+            font-size: 12px;
+            border-radius: 4px;
+            white-space: nowrap;
+            pointer-events: none;
+            border: 1px solid #ffcc00;
+            z-index: 20;
+        }
 
         /* --- 遊び方ボタン --- */
         #howToPlayBtn {
@@ -52,7 +79,12 @@
         <h2>対戦ルーム接続</h2>
         <input type="text" id="playerName" placeholder="プレイヤー名" maxlength="10" value="Player1">
         <input type="text" id="roomCode" placeholder="部屋番号(4桁数字)" maxlength="4" pattern="[0-9]{4}" value="1234">
-        <button id="startBtn">ゲーム開始</button>
+        <div class="mode-buttons">
+            <button id="pvpBtn" class="btn-mode">PvP</button>
+            <div class="pve-wrapper" data-tooltip="PvEモード近日追加予定">
+                <button id="pveBtn" class="btn-mode" disabled>PvE</button>
+            </div>
+        </div>
     </div>
 
     <!-- 画面左下のボタンと吹き出し -->
