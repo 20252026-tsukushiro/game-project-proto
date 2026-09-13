@@ -415,12 +415,41 @@ function startGame(playerName, roomCode, mode) {
                 exitBtn.setVisible(false);
                 opponentRematchText.setVisible(false);
 
-                if (data.text !== "") {
+                // カウントダウン開始時のみ位置リセットを実施
+                if (data.text === "3") {
                     if (!isSpectator) {
                         resetAmmo();
                         cancelCharge();
+
+                        const myState = room.state.players.get(room.sessionId);
+                        if (myState && player && player.body) {
+                            const initX = myState.playerIndex === 0 ? 100 : 700;
+                            const initY = 340;
+                            const initRot = myState.playerIndex === 0 ? 0 : Math.PI;
+
+                            player.setPosition(initX, initY);
+                            player.setRotation(initRot);
+                            player.body.setVelocity(0, 0);
+
+                            // 即座に最新の初期位置をサーバーへ送信して位置ズレを防止
+                            room.send("move", { x: initX, y: initY, rotation: initRot });
+                        }
                     }
 
+                    // 他プレイヤーもクライアント側で即座に初期位置へ設定
+                    for (let id in otherPlayers) {
+                        const otherP = otherPlayers[id];
+                        const otherState = room ? room.state.players.get(id) : null;
+                        if (otherP && otherState && !otherState.isSpectator) {
+                            const initX = otherState.playerIndex === 0 ? 100 : 700;
+                            const initY = 340;
+                            const initRot = otherState.playerIndex === 0 ? 0 : Math.PI;
+                            otherP.setPosition(initX, initY);
+                            otherP.setRotation(initRot);
+                        }
+                    }
+
+                    // 残留弾のクリア
                     bullets.children.each((b) => {
                         if (b.active) b.disableBody(true, true);
                     });
@@ -462,6 +491,12 @@ function startGame(playerName, roomCode, mode) {
         }
 
         if (!player || !player.visible) {
+            cancelCharge();
+            return;
+        }
+
+        if (room && room.state && room.state.gameOver) {
+            player.body.setVelocity(0, 0);
             cancelCharge();
             return;
         }

@@ -200,6 +200,19 @@ class GameRoom extends Room {
             this.gameTimerInterval = null;
         }
 
+        this.state.gameOver = false;
+        this.state.gameStarted = false;
+        this.state.timeLeft = 60;
+        this.state.winnerText = "";
+
+        this.startCountdown();
+    }
+
+    startCountdown() {
+        this.isCountingDown = true;
+        let count = 3;
+
+        // カウントダウン開始の瞬間に全プレイヤーの位置・HP・スコアを初期リセット
         this.state.players.forEach((p) => {
             if (!p.isSpectator) {
                 p.hp = 3;
@@ -212,18 +225,6 @@ class GameRoom extends Room {
                 p.chargeLevel = 0;
             }
         });
-
-        this.state.gameOver = false;
-        this.state.gameStarted = false;
-        this.state.timeLeft = 60;
-        this.state.winnerText = "";
-
-        this.startCountdown();
-    }
-
-    startCountdown() {
-        this.isCountingDown = true;
-        let count = 3;
 
         this.broadcast("countdown", { text: "3" });
 
