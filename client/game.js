@@ -381,13 +381,17 @@ function startGame(playerName, roomCode) {
                 exitBtn.setVisible(false);
                 opponentRematchText.setVisible(false);
 
-                resetAmmo();
-                cancelCharge();
+                // 空文字（画面テキスト消去通知）の時は AMMO リセットやチャージキャンセルを行わない
+                if (data.text !== "") {
+                    resetAmmo();
+                    cancelCharge();
 
-                // カウントダウン開始時に残弾を消去
-                bullets.children.each((b) => {
+                    // カウントダウン開始時に残弾を消去
+                    bullets.children.each((b) => {
                     if (b.active) b.disableBody(true, true);
-                });
+                    });
+                }
+                
 
                 centerText.setText(data.text).setVisible(true);
                 if (data.text !== "") {
