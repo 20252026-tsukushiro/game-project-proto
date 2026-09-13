@@ -1,0 +1,20 @@
+{
+  "name": "game-project-proto",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@colyseus/schema": "^1.0.46",
+    "colyseus": "^0.14.23",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}

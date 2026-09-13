@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Topdown Shooter Multiplayer</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+    <script src="https://unpkg.com/colyseus.js@0.14.13/dist/colyseus.js"></script>
+    <style>
+        body { margin: 0; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; }
+        #login-form {
+            position: absolute; z-index: 10; background: rgba(0, 0, 0, 0.85); padding: 30px;
+            border-radius: 12px; text-align: center; color: white; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        #login-form input {
+            display: block; margin: 10px auto; padding: 10px; width: 200px;
+            border-radius: 4px; border: 1px solid #555; text-align: center; font-size: 16px;
+        }
+        #login-form button {
+            padding: 10px 20px; font-size: 16px; background: #0088ff; color: white;
+            border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;
+        }
+        #login-form button:hover { background: #0066cc; }
+
+        /* --- 遊び方ボタン --- */
+        #howToPlayBtn {
+            position: fixed; bottom: 20px; left: 20px; z-index: 100;
+            padding: 10px 18px; background: #333; color: white;
+            border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 14px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        #howToPlayBtn:hover { background: #444; border-color: #0088ff; }
+
+        /* --- 吹き出しポップアップ --- */
+        #howToPlayModal {
+            display: none; position: fixed; bottom: 70px; left: 20px; width: 310px; z-index: 100;
+            background: rgba(0, 0, 0, 0.9); color: white; border: 1px solid #0088ff;
+            border-radius: 8px; padding: 16px; font-size: 13px; line-height: 1.5;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        #howToPlayModal::after {
+            content: ''; position: absolute; bottom: -8px; left: 25px;
+            border-width: 8px 8px 0; border-style: solid; border-color: #0088ff transparent;
+            display: block; width: 0;
+        }
+        .modal-title { font-weight: bold; color: #0088ff; margin-bottom: 4px; }
+        .modal-section { margin-bottom: 12px; }
+        .modal-section:last-child { margin-bottom: 0; }
+    </style>
+</head>
+<body>
+    <div id="login-form">
+        <h2>対戦ルーム接続</h2>
+        <input type="text" id="playerName" placeholder="プレイヤー名" maxlength="10" value="Player1">
+        <input type="text" id="roomCode" placeholder="部屋番号(4桁数字)" maxlength="4" pattern="[0-9]{4}" value="1234">
+        <button id="startBtn">ゲーム開始</button>
+    </div>
+
+    <!-- 画面左下のボタンと吹き出し -->
+    <button id="howToPlayBtn">遊び方</button>
+
+    <div id="howToPlayModal">
+        <div class="modal-section">
+            <div class="modal-title">【操作】</div>
+            WASD : 移動<br>
+            クリック : マウスカーソルの方向に弾を撃つ<br>
+            SPACE長押し : チャージショット
+        </div>
+        <div class="modal-section">
+            <div class="modal-title">【遊び方】</div>
+            60秒間でより多く弾を相手に当てよう<br>
+            撃った弾は1回まで反射します
+        </div>
+        <div class="modal-section">
+            <div class="modal-title">【チャージショット】</div>
+            SPACE長押しでチャージ開始<br>
+            2秒間チャージすることで障害物を貫通するチャージショットを放つ！<br>
+            チャージショットのダメージは通常の2倍！<br>
+            チャージ中は移動が遅くなる上、被弾するとチャージが中断されてしまうので注意
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+
+    <script>
+        const howToPlayBtn = document.getElementById('howToPlayBtn');
+        const howToPlayModal = document.getElementById('howToPlayModal');
+
+        howToPlayBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isVisible = howToPlayModal.style.display === 'block';
+            howToPlayModal.style.display = isVisible ? 'none' : 'block';
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!howToPlayModal.contains(e.target) && e.target !== howToPlayBtn) {
+                howToPlayModal.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
